@@ -1,0 +1,4 @@
+- byte pair encoding
+- training neural networks (section B.4, appendix A)
+- one-hot encoding (embedding layer - one-hot encoding + matrix multiplication in a fully connected layer, 
+    https://github.com/rasbt/LLMs-from-scratch/tree/main/ch02/03_bonus_embedding-vs-matmul)
