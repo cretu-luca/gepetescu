@@ -1,0 +1,5 @@
+In the context of deep learning and LLMs like GPT, the term “parameters” refers
+to the trainable weights of the model. These weights are essentially the internal vari-
+ables of the model that are adjusted and optimized during the training process to
+minimize a specific loss function. This optimization allows the model to learn from
+the training data.
