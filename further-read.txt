@@ -8,3 +8,4 @@
     not apply Bessel’s correction, which typically uses n – 1 instead of n in the denomi-
     nator to adjust for bias in sample variance estimation. This decision results in a so-
     called biased estimate of the variance.
+- weight typing
