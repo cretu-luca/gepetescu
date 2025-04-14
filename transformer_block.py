@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from multihead_attention import MultiHeadAttention
-from dummy import FeedForward, LayerNorm
+from transformer_utils import FeedForward, LayerNorm
 
 GPT_CONFIG_124M = {
     "vocab_size": 50257,

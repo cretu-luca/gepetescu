@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import tiktoken
 from transformer_block import TransformerBlock
-from dummy import LayerNorm
+from transformer_utils import LayerNorm
 
 GPT_CONFIG_124M = {
     "vocab_size": 50257,
