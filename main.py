@@ -21,6 +21,7 @@ def generate_text_simple(model, idx, max_new_tokens, context_size):
     return idx
 
 def main():
+
     start_context = "Every effort moves you"
     tokenizer = tiktoken.get_encoding("gpt2")
 
@@ -33,7 +34,20 @@ def main():
         context_size=config["context_length"]
     )
 
-    print("Output text:\n", token_ids_to_text(token_ids, tokenizer))
+    # print("Output text:\n", token_ids_to_text(token_ids, tokenizer))
+
+    inputs = torch.tensor([[16833, 3626, 6100],
+                           [40, 1107, 588]])
+    targets = torch.tensor([[3626, 6100, 345 ], 
+                            [1107, 588, 11311]])
+    
+    with torch.no_grad():
+        logits = model(inputs)
+
+    probas = torch.softmax(logits, dim=-1)
+    print(probas.shape)
+
+
 
 if __name__ == '__main__':
     main()
