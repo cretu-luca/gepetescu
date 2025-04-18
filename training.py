@@ -2,9 +2,11 @@ import json
 import torch
 import torch.nn as nn
 import tiktoken
+import argparse
+
 from data_loader import create_dataloader_v1
 from tokenization_utils import text_to_token_ids, token_ids_to_text
-from main import generate_text_simple
+from generate import generate, generate_and_print_sample
 from model import GPT
 
 file_path = "ad/the-verdict.txt"
@@ -13,6 +15,9 @@ with open(file_path, "r", encoding="utf-8") as file:
 
 with open('config.json', 'r') as f:
     config = json.load(f)
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-f", "--filename", nargs='?')
 
 # cross entropy loss of a given batch
 def calc_loss_batch(input_batch, target_batch, model, device):
@@ -47,54 +52,6 @@ def calc_loss_loader(data_loader, model, device, num_batches=None):
     
     return total_loss / num_batches
 
-model = GPT(config)
-
-train_ratio = 0.90
-split_idx = int(train_ratio * len(text_data))
-train_data = text_data[:split_idx]
-val_data = text_data[split_idx:]
-
-train_loader = create_dataloader_v1(
-    train_data,
-    batch_size=2,
-    max_length=config["context_length"],
-    stride=config["context_length"],
-    drop_last=True,
-    shuffle=True,
-    num_workers=0
-)
-val_loader = create_dataloader_v1(
-    val_data,
-    batch_size=2,
-    max_length=config["context_length"],
-    stride=config["context_length"],
-    drop_last=False,
-    shuffle=False,
-    num_workers=0
-)
-
-'''
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model.to(device)
-with torch.no_grad():
-    train_loss = calc_loss_loader(train_loader, model, device)
-    val_loss = calc_loss_loader(val_loader, model, device)
-
-print("Training loss:", train_loss)
-print("Validation loss:", val_loss)
-'''
-
-print("Train loader:")
-for x, y in train_loader:
-    print(x.shape, y.shape)
-print("\nValidation loader:")
-for x, y in val_loader:
-    print(x.shape, y.shape)
-
-print(f"Total text length: {len(text_data)}")
-print(f"Validation data length: {len(val_data)}")
-print(f"Context length: {config['context_length']}")
-
 def train_model_simple(model, train_loader, val_loader, 
                        optimizer, device, num_epochs, 
                        eval_freq, eval_iter, start_context, tokenizer):
@@ -124,14 +81,15 @@ def train_model_simple(model, train_loader, val_loader,
                 val_losses.append(val_loss)
                 track_tokens_seen.append(tokens_seen)
 
-                print(f"Ep {epoch+1} (Step {global_step:06d}): "
-                    f"Train loss {train_loss:.3f}, "
-                    f"Val loss {val_loss:.3f}"
+                print(f"ep {epoch+1} (step {global_step:06d}): "
+                    f"train loss {train_loss:.3f}, "
+                    f"val loss {val_loss:.3f}"
                 )
-
+    '''
         generate_and_print_sample(
             model, tokenizer, device, start_context
         )
+    '''
 
     return train_losses, val_losses, track_tokens_seen
 
@@ -150,80 +108,70 @@ def evaluate_model(model, train_loader, val_loader, device, eval_iter):
     model.train()
     return train_loss, val_loss
 
-def generate_and_print_sample(model, tokenizer, device, start_context):
-    model.eval()
-    context_size = model.pos_emb.weight.shape[0]
-    encoded = text_to_token_ids(start_context, tokenizer)
+def main():
 
-    with torch.no_grad():
-        token_ids = generate_text_simple(
-            model=model, idx=encoded,
-            max_new_tokens=50, context_size=context_size
-        )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    decoded_text = token_ids_to_text(token_ids, tokenizer)
-    print(decoded_text.replace("\n", " "))
-    model.train()
+    model = GPT(config)
+    model.to(device)
 
-tokenizer = tiktoken.get_encoding("gpt2")
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    optimizer = torch.optim.AdamW(model.parameters(),
+            lr=0.0004, weight_decay=0.1)
 
-torch.manual_seed(123)
-model = GPT(config)
-model.to(device)
+    args = parser.parse_args()
+    if args.filename is not None:
+        print(f"loading model from {args.filename}")
 
-optimizer = torch.optim.AdamW(
-    model.parameters(),
-    lr=0.0004, weight_decay=0.1
-)
+        checkpoint = torch.load(args.filename, weights_only=True) 
 
-num_epochs = 10
-train_losses, val_losses, tokens_seen = train_model_simple(
-    model, train_loader, val_loader, optimizer, device,
-    num_epochs=num_epochs, eval_freq=5, eval_iter=5,
-    start_context="Every effort moves you", tokenizer=tokenizer
-)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-def generate(model, idx, max_new_tokens, context_size, 
-             temperature=0.0, top_k=None, eos_id=None):
-    for _ in range(max_new_tokens):
-        idx_cond = idx[:, -context_size:]
+    else:
+        print(f"initializing untrained model")
 
-        with torch.no_grad():
-            logits = model(idx_cond)
+    tokenizer = tiktoken.get_encoding("gpt2")
 
-        logits = logits[:, -1, :]
+    torch.manual_seed(123)
 
-        if top_k is not None:
-            top_logits = torch.topk(logits, top_k)
-            min_val = top_logits[:, -1]
-            logits = torch.where(
-                condition=logits < min_val,
-                input=torch.tensor(float('-inf')).to(logits.device),
-                other=logits
-            )
+    train_ratio = 0.90
+    split_idx = int(train_ratio * len(text_data))
+    train_data = text_data[:split_idx]
+    val_data = text_data[split_idx:]
 
-        if temperature > 0.0:
-            logits = logits / temperature
-            probs = torch.softmax(logits, dim=-1)
-            idx_next = torch.multinomial(probs, num_samples=-1)
-        else:
-            idx_next = torch.argmax(logits, dim=-1, keepdim=True)
+    train_loader = create_dataloader_v1(
+        train_data,
+        batch_size=2,
+        max_length=config["context_length"],
+        stride=config["context_length"],
+        drop_last=True,
+        shuffle=True,
+        num_workers=0
+    )
 
-        if idx_next == eos_id:
-            break
+    val_loader = create_dataloader_v1(
+        val_data,
+        batch_size=2,
+        max_length=config["context_length"],
+        stride=config["context_length"],
+        drop_last=False,
+        shuffle=False,
+        num_workers=0
+    )
 
-        idx = torch.cat((idx, idx_next), dim=-1)
+    num_epochs = 10
+    train_losses, val_losses, tokens_seen = train_model_simple(
+        model, train_loader, val_loader, optimizer, device,
+        num_epochs=num_epochs, eval_freq=1, eval_iter=5,
+        start_context="every effort moves you", tokenizer=tokenizer
+    )
 
-    return idx
+    torch.save({
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        },
+        "model_and_optimizer.pth"
+    )
 
-token_ids = generate(
-    model=model,
-    idx=text_to_token_ids("Every effort moves you", tokenizer),
-    max_new_tokens=15,
-    context_size=config["context_length"],
-    top_k=25,
-    temperature=1.4
-)
-
-print("Output text:\n", token_ids_to_text(token_ids, tokenizer))
+if __name__ == '__main__':
+    main()
